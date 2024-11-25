@@ -88,18 +88,18 @@ class ROSJtop:
         self.jetson.close()
 
     def fan_service(self, req):
-        # Try to set new nvpmodel
-        fan_mode = req.mode
+        # Update fan_service to use fan.profile instead of fan.mode
+        fan_profile = req.mode
         fan_speed = req.fanSpeed
         try:
-            self.jetson.fan.mode = fan_mode
-            if fan_mode == "manual":
+            self.jetson.fan.profile = fan_profile
+            if fan_profile == "manual":
                 self.jetson.fan.speed = fan_speed
         except jtop.JtopException as e:
             rospy.logerr(e)
-            # Return same nvp model
-            fan_mode = str(self.jetson.fan.mode)
-        return fanResponse(fan_mode)
+            # Return current fan profile
+            fan_profile = str(self.jetson.fan.profile)
+        return fanResponse(fan_profile)
 
     def jetson_clocks_service(self, req):
         # Set new jetson_clocks
@@ -123,16 +123,19 @@ class ROSJtop:
         # Status board and board info
         self.arr.status = [other_status(self.hardware, jetson, jtop.__version__)]
         # Make diagnostic message for each cpu
-        self.arr.status += [cpu_status(self.hardware, name, jetson.cpu[name]) for name in jetson.cpu]
+        self.arr.status += [cpu_status(self.hardware, name, cpu)
+                            for name, cpu in enumerate(jetson.cpu['cpu'])]
         # Merge all other diagnostics
         self.arr.status += [gpu_status(self.hardware, name, jetson.gpu[name])
                             for name in self.jetson.gpu]
         # Make diagnostic message for each engine
         self.arr.status += [engine_status(self.hardware, name, engine)
                             for name, engine in jetson.engine.items()]
-        self.arr.status += [ram_status(self.hardware, jetson.ram, 'mem')]
-        self.arr.status += [swap_status(self.hardware, jetson.swap, 'mem')]
-        self.arr.status += [emc_status(self.hardware, jetson.emc, 'mem')]
+        # Update access to jetson.memory
+        self.arr.status += [ram_status(self.hardware, jetson.memory['RAM'], 'mem')]
+        self.arr.status += [swap_status(self.hardware, jetson.memory['SWAP'], 'mem')]
+        if 'EMC' in jetson.memory:
+            self.arr.status += [emc_status(self.hardware, jetson.memory['EMC'], 'mem')]
         # Make diagnostic message for each Temperature
         self.arr.status += [temp_status(self.hardware, name, sensor)
                             for name, sensor in jetson.temperature.items()]
@@ -145,10 +148,10 @@ class ROSJtop:
             name_total = 'ALL'
         self.arr.status += [power_status(self.hardware,
                                          name_total, jetson.power['tot'])]
-        # Fan controller
+        # Update fan_status usage
         if jetson.fan:
-            self.arr.status += [fan_status(self.hardware, key, jetson.fan)
-                                for key, value in jetson.fan.items()]
+            self.arr.status += [fan_status(self.hardware, name, fan)
+                                for name, fan in jetson.fan.items()]
         # Status board and board info
         self.arr.status += [self.board_status]
         # Add disk status
